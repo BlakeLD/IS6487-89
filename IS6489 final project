@@ -1,0 +1,47 @@
+---
+title: "Home Value Predictive Model"
+authors: "Sally Teny, Lize Dong, and Maite Carranza"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = T)
+# Load packages.
+library(knitr)
+library(tidyverse)
+library(caret)
+library(arm)
+library(caret)
+library(missForest)
+library(MASS)
+library(purrr)
+library(ggplot2)
+library(plotmo)
+```
+## Problem Introduction
+This report concerns the identification of attributes in a home which have the largest impact on sale price and negotiation. The dataset used in this analysis consists of housing data for 2,919 properties in Ames, Iowa listed and sold between the years 2006-2010. There are 80 distinct variables captured per house that may or may not influence pricing. Not every home will have the feature captured by that variable, which may also serve as a hint on features that are not important. Popular convention tells us square footage obviously plays a big role in sale price, as a larger-size home can be reasonably expected to cost more. But there have to be other variables influencing the cost a buyer is willing to incur in order to take hold of a property such as the availability of a garage, an unfinished mother-in-law addition, central air conditioning and forced heat, or as the adage goes, “location, location, location.” This report will explore the available data to identify any such variables that would prove important to a predictive model for pricing a home for sale.
+
+###The Data
+```{r}
+# Add data  
+
+test <- read.csv("test.csv") 
+train <- read.csv("train.csv")
+
+#We added a SalePrice column to the test data set so it would have the same number of columns as the train set
+
+test$SalePrice <- NA
+allData <- rbind(train, test)
+
+#Exploring and sumarizing the data
+
+str(allData)
+summary(allData)
+glimpse(allData)
+res <- sapply(allData, class )
+table(res)
+```
