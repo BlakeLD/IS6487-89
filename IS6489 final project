@@ -1,3 +1,4 @@
+#R studio link: file:///D:/U%20of%20U/MSIS/IS6489-Stats%20&%20Pred%20Analytics/Final%20Project/2020_12_06_Final_Project_MaiteSallyBlake.nb.html
 ---
 title: "Home Value Predictive Model"
 authors: "Sally Teny, Lize Dong, and Maite Carranza"
@@ -44,4 +45,282 @@ summary(allData)
 glimpse(allData)
 res <- sapply(allData, class )
 table(res)
+```
+###Exploring the Data
+```{r}
+#Summarizing the number of unique values per variable
+sort(lengths(lapply(allData, unique)), decreasing = T) 
+
+#Summarizing the number of missing values per column
+sort(colSums(is.na(allData)), decreasing = T)
+
+#Summarizing variables that have near-zero variance, since they typically do not add much value to a model
+nearZeroVar(allData, names=T)
+
+```
+###Cleaning the Data
+```{r}
+#The following cuts to data were made based on near-zero variance:
+allData <- allData %>% dplyr::select(-Street, 
+                                   -LandContour, 
+                                   -Utilities, 
+                                   -LandSlope, 
+                                   -Condition2, 
+                                   -RoofMatl,
+                                   -BsmtCond,
+                                   -BsmtFinType2,
+                                   -BsmtFinSF2,
+                                   -Heating,
+                                   -LowQualFinSF,
+                                   -KitchenAbvGr,
+                                   -Functional,
+                                   -GarageQual,
+                                   -GarageCond,
+                                   -OpenPorchSF,
+                                   -EnclosedPorch,
+                                   -X3SsnPorch,
+                                   -ScreenPorch,
+                                   -PoolArea,
+                                   -MiscVal)
+
+#The following cuts were made based on the numbe rof missing values:
+allData <- allData %>% dplyr::select(-Alley,-PoolQC,-MiscFeature,-Fence,-FireplaceQu) 
+
+#Imputing missing variables 
+
+#Cleaning up missing values and turning those variables into factors:
+
+Garage <- c("GarageType","GarageFinish")
+Bsmt <- c("BsmtExposure","BsmtQual","BsmtFinType1")
+for (x in c(Garage, Bsmt) )
+ {
+  allData[[x]] <- factor( allData[[x]], levels= c(levels(allData[[x]]),c('None')))
+  allData[[x]][is.na(allData[[x]])] <- "None"
+ }
+
+#GarageYrBlt - logically speaking, if there is no year the garage was built, but there is a garage, it might mean the garage was built at the same time as the home
+allData$GarageYrBlt[is.na(allData$GarageYrBlt)] <- allData$YearBuilt[is.na(allData$GarageYrBlt)]
+
+#Turning some variables directly into factors
+allData$MSSubClass <- factor(allData$MSSubClass)
+allData$MoSold <- factor(allData$MoSold)
+allData$YrSold <- factor(allData$YrSold)
+
+#Imputing Frontage from the mean
+allData$LotFrontage[is.na(allData$LotFrontage)] <- median(allData$LotFrontage, na.rm = T)
+
+# Supplement issing values with None
+allData[["MasVnrType"]][is.na(allData[["MasVnrType"]])] <- "None"
+
+#Similar situation, supplement with zero
+allData[["MasVnrArea"]][is.na(allData[["MasVnrArea"]])] <- 0
+
+# The missing values in these int type variables should be zero if not filled in, because they are not measuring, they are counting 
+baseGara <-  c ( "BsmtFullBath" , "BsmtHalfBath" , "BsmtFinSF1" , "BsmtUnfSF" , "TotalBsmtSF" , "GarageCars" , "GarageArea" ) 
+
+for  (x in baseGara)
+{
+  allData [[x]] [ is.na ( allData [[x]])]  <- 0
+  }
+
+# Imputing with the mode
+#first let's look at what is still missing
+sort(colSums(is.na(allData)), decreasing = T)
+
+table(allData$MSZoning, useNA = "always")
+allData$MSZoning[is.na(allData$MSZoning)] <- "RL"
+
+table(allData$Exterior1st, useNA = "always")
+allData$Exterior1st[is.na(allData$Exterior1st)] <- "VinylSd"
+
+table(allData$Exterior2nd, useNA = "always")
+allData$Exterior2nd[is.na(allData$Exterior2nd)] <- "VinylSd"
+
+table(allData$Electrical, useNA = "always")
+allData$Electrical[is.na(allData$Electrical)] <- "SBrkr"
+
+table(allData$KitchenQual, useNA = "always")
+allData$KitchenQual[is.na(allData$KitchenQual)] <- "TA"
+
+table(allData$SaleType, useNA = "always")
+allData$SaleType[is.na(allData$SaleType)] <- "WD"
+
+```
+###Re-evaluating the Remaining Data
+```{r}
+#What do we have with missing data?
+sort(colSums(is.na(allData)), decreasing = T)
+nearZeroVar(allData, names = T)
+#Get rid of variables with near-zero variance once again
+allData <- allData %>% dplyr::select(-BsmtQual, 
+                                   -BsmtExposure, 
+                                   -BsmtFinType1, 
+                                   -GarageType, 
+                                   -GarageFinish)
+```
+###Separating the data and further cleaning
+```{r}
+train <- allData[!is.na(allData$SalePrice), ]
+test <- allData[is.na(allData$SalePrice), ]
+
+# fit regularized model
+set.seed(123)
+caret_glmnet <- train(SalePrice ~ . -Id,
+                      method = "glmnet",
+                      preProcess = c("center", "scale"),
+                      data = train)
+
+# pull coefficients of the best model
+coef(caret_glmnet$finalModel, caret_glmnet$finalModel$tuneValue$lambda)
+
+# Drop zeroed coefficients from the model
+train <- train %>% dplyr::select(-ExterCond,
+                                 -BsmtUnfSF,
+                                  -Electrical,
+                                  -BsmtHalfBath)
+
+test <- test %>% dplyr::select(-ExterCond,
+                                 -BsmtUnfSF,
+                                  -Electrical,
+                                  -BsmtHalfBath)
+
+#Some variables came back with zero coefficients, but we decided to explore them further to make sure it was not due to the variable type, because it would seem they should make a difference to our common sense. 
+#PavedDrive, HouseStyle, MoSold, YrSold
+mean(train$PavedDrive == "Y")
+str(train$HouseStyle)
+summary(train$MoSold)
+summary(train$YrSold)
+
+#Int variables should be ok to remove
+train <- train %>% dplyr::select(-MoSold,
+                                 -YrSold)
+
+test <- test %>% dplyr::select(-MoSold,
+                                 -YrSold)
+
+#Char variables might end up having an effect if factored
+table(train$PavedDrive, useNA = "always")
+train$PavedDrive <- factor(train$PavedDrive, levels= c("N", "P", "Y", "None" ))
+train$PavedDrive[is.na(train$PavedDrive)] <- "None"
+
+table(train$HouseStyle, useNA = "always")
+train$HouseStyle <- factor(train$HouseStyle, levels= c("1.5Fin", "1.5Unf", "1Story", "2.5Fin", "2.5Unf", "2Story", "SFoyer", "SLvl", "None" ))
+train$HouseStyle[is.na(train$HouseStyle)] <- "None"
+
+# Re-fit regularized model
+set.seed(123)
+caret_glmnet_2 <- train(SalePrice ~ . -Id,
+                      method = "glmnet",
+                      preProcess = c("center", "scale"),
+                      data = train)
+
+# pull coefficients of the best model
+coef(caret_glmnet_2$finalModel, caret_glmnet_2$finalModel$tuneValue$lambda)
+
+#PavedDrive continues to make no difference so we are getting rid of it, but HouseStyle has changed once factored. 
+
+train <- train %>% dplyr::select(-PavedDrive)
+
+test <- test %>% dplyr::select(-PavedDrive)
+
+#Make HouseStyle a factor in the test set as well
+table(test$HouseStyle, useNA = "always")
+test$HouseStyle <- factor(test$HouseStyle, levels= c("1.5Fin", "1.5Unf", "1Story", "2.5Fin", "2.5Unf", "2Story", "SFoyer", "SLvl", "None" ))
+test$HouseStyle[is.na(test$HouseStyle)] <- "None"
+```
+###The Model
+```{r}
+# Fit the model with the remaining variables and run cross validation in 1
+set.seed(123)
+caret_lm <- train(log(SalePrice) ~ . -Id,  
+                 method = 'lm',
+                 trControl = trainControl(method="cv", number=10),
+                 data = train)
+
+#Out-of-model performance
+caret_lm
+
+#In-model performance
+summary(caret_lm)
+
+# prepare test data for submission 
+##### THIS IS WHERE WE GOT THE OLD ERROR MESSAGE ################
+prediction = test %>%
+  dplyr::select(Id) %>%
+  mutate(SalePrice = predict(caret_lm, newdata = test))
+
+
+# convert SalePrice to its original scale (not log) 
+submission = prediction %>%
+  dplyr::select(Id, SalePrice) %>%
+  mutate(SalePrice = exp(SalePrice))
+
+# check SalePrice   
+head(submission)
+
+#Code to put the predictions into the test set:
+test_predictions = merge(test, submission, by = "Id")
+
+# delete extra column of SalePrice.x
+test_predictions <- test_predictions %>% dplyr::select(-SalePrice.x)
+
+# rename SalePrice.y to SalePrice
+test_predictions <- test_predictions %>%
+  rename(SalePrice = SalePrice.y)
+                          
+# extract sub into a csv in order to submit
+write.csv(submission, "submission.csv")
+
+```
+###Visuals
+```{r}
+
+#Figure 1
+figure1<-ggplot(train, aes(x=YearBuilt, y = log(SalePrice), color=YearBuilt)) + 
+  geom_point() +
+  theme_bw() +
+  labs(x='Year Built',y='Sale Price',title='The Relationship Between YearBuilt and log(SalePrice) Variables')
+  theme(legend.position='none') 
+figure1
+
+#Figure 2
+
+ggplot(train, aes(x=OverallQual, y=SalePrice, color=OverallQual)) + 
+  geom_point() + 
+  theme_bw() +
+  labs(x='OverallQual',y='SalePrice',title='The Relationship Between OverallQual and SalePrice') +                  # add labels to x and y axes
+  theme(axis.text.x = element_text(angle = 0, hjust =1)) + geom_smooth()
+
+
+#Figure 3
+  ggplot(train) +                          # specify the data set
+  geom_boxplot(aes(x=Neighborhood,y=SalePrice,fill=Neighborhood)) +   # setup a box plot with aesthetic mappings
+  theme_bw() +                                     # use a different theme
+  labs(x='Neighborhood',y='SalePrice',title='The Relationship Between Neighborhood and SalePrice with Outlier') +                  # add labels to x and y axes
+  theme(axis.text.x = element_text(angle = 90, hjust =1))
+
+#Figure 4 Plot caret_glmnet residual
+plotres(caret_glmnet_2,
+        which = 3,
+        info = TRUE)
+
+#Figure 5 Plot caret_lm model residuals 
+plotres(caret_lm,
+        which = 3,
+        info = TRUE)
+
+
+#Figure 6
+Visual1 <- ggplot(train, aes(x=SalePrice, y=Neighborhood, color = YearBuilt)) +
+  geom_point(alpha = .55) + 
+  scale_x_continuous(labels = scales::comma)+
+  labs(title = "Known Housing Prices by Neighborhood & Year Built") 
+
+Visual1
+
+#Figure 7
+Visual2 <- ggplot(test_predictions, aes(x=SalePrice, y=Neighborhood, color = YearBuilt)) +
+  geom_point(alpha = .55) + 
+  scale_x_continuous(labels = scales::comma)+
+  labs(title = "Predicted Housing Prices by Neighborhood & Year Built") 
 ```
